@@ -1,1 +1,242 @@
-Cos tam cos tam 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Time Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
+  header { background: #24292f; color: #fff; padding: 16px 24px; }
+  header h1 { margin: 0; font-size: 1.4rem; }
+  header p { margin: 4px 0 0; opacity: .8; font-size: .9rem; }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.12); padding: 16px; margin-bottom: 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; }
+  fieldset { border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; margin: 0; }
+  legend { font-weight: 600; font-size: .85rem; }
+  label { margin-right: 12px; cursor: pointer; }
+  select { font-size: .95rem; padding: 2px 4px; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin: 0 4px; border: 1px solid rgba(0,0,0,.4); }
+  #chartWrap { position: relative; height: 520px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
+  th { background: #fafafa; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.total td { font-weight: 600; }
+  #status { font-size: .9rem; color: #555; margin: 8px 0 0; }
+  #status.error { color: #b00020; }
+  .muted { color: #777; font-size: .85rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lead Time Dashboard</h1>
+  <p>Lead time scatterplot with 50th / 85th / 95th percentile forecast &mdash; source: <em>Lead Times - 2024-25.xlsx</em></p>
+</header>
+<main>
+  <div class="card">
+    <div class="controls">
+      <fieldset>
+        <legend>Size</legend>
+        <label><input type="checkbox" class="size" value="S" checked><span class="swatch" style="background:#1f6fd1"></span>S</label>
+        <label><input type="checkbox" class="size" value="M" checked><span class="swatch" style="background:#ffd60a"></span>M</label>
+        <label><input type="checkbox" class="size" value="L" checked><span class="swatch" style="background:#ff8c00"></span>L</label>
+      </fieldset>
+      <fieldset>
+        <legend>Forecast timeframe (3-month intervals)</legend>
+        <label>From <select id="from"></select></label>
+        <label>To <select id="to"></select></label>
+        <span id="months" class="muted"></span>
+      </fieldset>
+    </div>
+    <p id="status">Loading data&hellip;</p>
+  </div>
+
+  <div class="card">
+    <div id="chartWrap"><canvas id="chart"></canvas></div>
+    <p class="muted">Coloured points fall inside the selected timeframe and are used for the percentiles. Grey points are outside it and shown for context only. The shaded band marks the timeframe.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Forecast &ndash; lead time percentiles (days)</h3>
+    <table>
+      <thead><tr><th>Size</th><th>Items</th><th>50%</th><th>85%</th><th>95%</th></tr></thead>
+      <tbody id="stats"></tbody>
+    </table>
+    <p class="muted">Example: an 85% value of 100 means 85% of items finished within 100 days. Values use the nearest-rank method.</p>
+  </div>
+</main>
+
+<script>
+const DATA_FILE = 'Lead Times - 2024-25.xlsx';
+const SIZES = ['S', 'M', 'L'];
+const COLORS = { S: '#1f6fd1', M: '#ffd60a', L: '#ff8c00' };
+const PERCENTILES = [
+  { p: 50, color: '#2e7d32', dash: [6, 4] },
+  { p: 85, color: '#c62828', dash: [12, 4] },
+  { p: 95, color: '#6a1b9a', dash: [2, 3] }
+];
+// Polish month names (nominative and genitive), plus English fallbacks
+const MONTHS = {
+  stycz: 0, lut: 1, mar: 2, kwie: 3, maj: 4, maja: 4, czerw: 5, lip: 6, sierp: 7, wrze: 8, pa: 9, list: 10, grud: 11,
+  jan: 0, feb: 1, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+};
+
+const $ = id => document.getElementById(id);
+let items = [];
+let quarters = [];
+let chart;
+
+function parseDate(v) {
+  if (v instanceof Date && !isNaN(v)) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === 'number') { const d = XLSX.SSF.parse_date_code(v); return new Date(d.y, d.m - 1, d.d); }
+  const s = String(v ?? '').trim().toLowerCase();
+  let m = s.match(/^(\d{1,2})\s+(\p{L}+)\s+(\d{4})$/u);
+  if (m) {
+    const key = Object.keys(MONTHS).sort((a, b) => b.length - a.length).find(k => m[2].startsWith(k));
+    if (key !== undefined) return new Date(+m[3], MONTHS[key], +m[1]);
+  }
+  m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  return null;
+}
+
+function parseSheet(rows) {
+  const header = rows[0].map(h => String(h ?? '').toLowerCase());
+  const find = (re, fallback) => { const i = header.findIndex(h => re.test(h)); return i >= 0 ? i : fallback; };
+  const cDate = find(/data|date|uko|done|finish/, 0);
+  const cSize = find(/rozmiar|size/, 1);
+  const cLead = find(/czas|lead|time|days|dni/, 2);
+  const out = [];
+  for (const r of rows.slice(1)) {
+    const date = parseDate(r[cDate]);
+    const size = String(r[cSize] ?? '').trim().toUpperCase();
+    const lead = Number(String(r[cLead] ?? '').replace(',', '.'));
+    if (date && SIZES.includes(size) && isFinite(lead) && String(r[cLead] ?? '') !== '') out.push({ date, size, lead });
+  }
+  return out.sort((a, b) => a.date - b.date);
+}
+
+function percentile(values, p) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(1, Math.ceil(p / 100 * sorted.length)) - 1];
+}
+
+const quarterStart = d => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1);
+const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+const quarterLabel = d => `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`;
+const fmtDate = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtMonth = d => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+
+function setupQuarters() {
+  quarters = [];
+  const last = items[items.length - 1].date;
+  for (let q = quarterStart(items[0].date); q <= last; q = addMonths(q, 3)) quarters.push(q);
+  const opts = (fmt) => quarters.map((q, i) => `<option value="${i}">${fmt(q)}</option>`).join('');
+  $('from').innerHTML = opts(q => `${quarterLabel(q)} (${fmtMonth(q)})`);
+  $('to').innerHTML = opts(q => `${quarterLabel(q)} (${fmtMonth(addMonths(q, 2))})`);
+  $('from').value = 0;
+  $('to').value = quarters.length - 1;
+}
+
+function render(changed) {
+  let fi = +$('from').value, ti = +$('to').value;
+  if (fi > ti) { if (changed === 'from') $('to').value = ti = fi; else $('from').value = fi = ti; }
+  const from = quarters[fi], to = addMonths(quarters[ti], 3);
+  $('months').textContent = `${(ti - fi + 1) * 3} months`;
+
+  const sizes = SIZES.filter(s => document.querySelector(`.size[value="${s}"]`).checked);
+  const visible = items.filter(i => sizes.includes(i.size));
+  const inside = i => i.date >= from && i.date < to;
+  const used = visible.filter(inside);
+  const outside = visible.filter(i => !inside(i));
+
+  const xMin = +addMonths(quarters[0], 0) - 7 * 864e5;
+  const xMax = +addMonths(quarters[quarters.length - 1], 3);
+  const point = i => ({ x: +i.date, y: i.lead, size: i.size });
+
+  const datasets = sizes.map(s => ({
+    type: 'scatter', label: `${s} (${used.filter(i => i.size === s).length})`,
+    data: used.filter(i => i.size === s).map(point),
+    backgroundColor: COLORS[s], borderColor: 'rgba(0,0,0,.55)', borderWidth: 1, pointRadius: 6, pointHoverRadius: 8
+  }));
+  if (outside.length) datasets.push({
+    type: 'scatter', label: `Outside timeframe (${outside.length})`,
+    data: outside.map(point),
+    backgroundColor: 'rgba(170,170,170,.35)', borderColor: 'rgba(120,120,120,.6)', borderWidth: 1, pointRadius: 5
+  });
+  const leads = used.map(i => i.lead);
+  for (const { p, color, dash } of PERCENTILES) {
+    const v = percentile(leads, p);
+    if (v === null) continue;
+    datasets.push({
+      type: 'line', label: `${p}th percentile: ${v} days`,
+      data: [{ x: xMin, y: v }, { x: xMax, y: v }],
+      borderColor: color, backgroundColor: color, borderDash: dash, borderWidth: 2, pointRadius: 0
+    });
+  }
+
+  if (chart) chart.destroy();
+  chart = new Chart($('chart'), {
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { type: 'linear', min: xMin, max: xMax, title: { display: true, text: 'Completion date' },
+             ticks: { stepSize: 30.44 * 864e5, callback: v => fmtMonth(new Date(v)) } },
+        y: { beginAtZero: true, title: { display: true, text: 'Lead time (days)' } }
+      },
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: { callbacks: { label: c => c.dataset.type === 'line' ? c.dataset.label
+          : `${c.raw.size}: ${c.raw.y} days (done ${fmtDate(new Date(c.raw.x))})` } }
+      }
+    },
+    plugins: [{
+      id: 'timeframeBand',
+      beforeDatasetsDraw({ ctx, chartArea: a, scales: { x } }) {
+        const l = Math.max(a.left, x.getPixelForValue(+from)), r = Math.min(a.right, x.getPixelForValue(+to));
+        ctx.save(); ctx.fillStyle = 'rgba(31,111,209,.07)'; ctx.fillRect(l, a.top, r - l, a.bottom - a.top); ctx.restore();
+      }
+    }]
+  });
+
+  const row = (label, list, swatch, cls) => {
+    const l = list.map(i => i.lead);
+    const cell = p => percentile(l, p) ?? '&ndash;';
+    return `<tr class="${cls || ''}"><td>${swatch ? `<span class="swatch" style="background:${swatch}"></span>` : ''}${label}</td>
+      <td>${l.length}</td><td>${cell(50)}</td><td>${cell(85)}</td><td>${cell(95)}</td></tr>`;
+  };
+  $('stats').innerHTML = sizes.map(s => row(s, used.filter(i => i.size === s), COLORS[s])).join('')
+    + row(`All selected sizes (${sizes.join(', ') || 'none'})`, used, null, 'total');
+}
+
+async function init() {
+  try {
+    const resp = await fetch(encodeURI(DATA_FILE));
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const wb = XLSX.read(await resp.arrayBuffer(), { cellDates: true });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
+    items = parseSheet(rows);
+    if (!items.length) throw new Error('no valid rows found');
+    $('status').textContent = `Loaded ${items.length} completed items (${fmtDate(items[0].date)} – ${fmtDate(items[items.length - 1].date)}).`;
+  } catch (e) {
+    $('status').textContent = `Could not load "${DATA_FILE}": ${e.message}`;
+    $('status').className = 'error';
+    return;
+  }
+  setupQuarters();
+  document.querySelectorAll('.size').forEach(cb => cb.addEventListener('change', () => render()));
+  $('from').addEventListener('change', () => render('from'));
+  $('to').addEventListener('change', () => render('to'));
+  render();
+}
+init();
+</script>
+</body>
+</html>

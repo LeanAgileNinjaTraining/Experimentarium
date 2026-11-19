@@ -7,37 +7,50 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
-  header { background: #24292f; color: #fff; padding: 16px 24px; }
+  :root { color-scheme: dark; --bg: #2b2b2b; --card: #363636; --line: #4a4a4a; --text: #e6e6e6; --muted: #a8a8a8; --accent: #6ea8fe; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  header { background: #1f1f1f; padding: 16px 24px; border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 1.4rem; }
-  header p { margin: 4px 0 0; opacity: .8; font-size: .9rem; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; }
   main { max-width: 1200px; margin: 0 auto; padding: 16px; }
-  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.12); padding: 16px; margin-bottom: 16px; }
-  .controls { display: flex; flex-wrap: wrap; gap: 16px; }
-  fieldset { border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; margin: 0; }
-  legend { font-weight: 600; font-size: .85rem; }
-  label { margin-right: 12px; cursor: pointer; }
-  select { font-size: .95rem; padding: 2px 4px; }
-  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin: 0 4px; border: 1px solid rgba(0,0,0,.4); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card h3 { margin: 0 0 12px; font-size: 1.05rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; margin: 0; }
+  legend { font-weight: 600; font-size: .85rem; color: var(--muted); }
+  label { margin-right: 10px; cursor: pointer; white-space: nowrap; }
+  input, select, button { font: inherit; font-size: .9rem; color: var(--text); background: #2b2b2b; border: 1px solid #5a5a5a; border-radius: 4px; padding: 3px 6px; }
+  input[type=checkbox] { padding: 0; }
+  input[type=number] { width: 80px; }
+  button { cursor: pointer; background: #454545; }
+  button:hover { background: #555; }
+  button.danger:hover { background: #7a2b2b; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin: 0 4px; border: 1px solid rgba(0,0,0,.6); }
+  .lineSwatch { display: inline-block; width: 22px; border-top: 3px dashed; vertical-align: middle; margin-right: 6px; }
   #chartWrap { position: relative; height: 520px; }
   table { border-collapse: collapse; width: 100%; }
-  th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
-  th { background: #fafafa; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: center; }
+  th { color: var(--muted); font-weight: 600; }
   th:first-child, td:first-child { text-align: left; }
   tr.total td { font-weight: 600; }
-  #status { font-size: .9rem; color: #555; margin: 8px 0 0; }
-  #status.error { color: #b00020; }
-  .muted { color: #777; font-size: .85rem; }
+  tr.removed td { color: #777; text-decoration: line-through; }
+  tr.removed td:last-child { text-decoration: none; }
+  .status { font-size: .9rem; color: var(--muted); margin: 8px 0 0; }
+  .error { color: #ff8a80 !important; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  .scroll { max-height: 360px; overflow-y: auto; }
+  #pctList .pct { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; }
 </style>
 </head>
 <body>
 <header>
   <h1>Lead Time Dashboard</h1>
-  <p>Lead time scatterplot with 50th / 85th / 95th percentile forecast &mdash; source: <em>Lead Times - 2024-25.xlsx</em></p>
+  <p>Lead time scatterplot with percentile forecast &mdash; source: <em>Lead Times - 2024-25.xlsx</em></p>
 </header>
 <main>
   <div class="card">
-    <div class="controls">
+    <div class="row">
       <fieldset>
         <legend>Size</legend>
         <label><input type="checkbox" class="size" value="S" checked><span class="swatch" style="background:#1f6fd1"></span>S</label>
@@ -45,196 +58,398 @@
         <label><input type="checkbox" class="size" value="L" checked><span class="swatch" style="background:#ff8c00"></span>L</label>
       </fieldset>
       <fieldset>
-        <legend>Forecast timeframe (3-month intervals)</legend>
-        <label>From <select id="from"></select></label>
-        <label>To <select id="to"></select></label>
-        <span id="months" class="muted"></span>
+        <legend>Forecast timeframe (completion date)</legend>
+        <label>From <input type="date" id="from"></label>
+        <label>To <input type="date" id="to"></label>
+        <button id="fullRange" type="button">Whole period</button>
+      </fieldset>
+      <fieldset>
+        <legend>Data</legend>
+        <button id="restoreAll" type="button">Restore removed points</button>
+        <button id="resetAll" type="button" class="danger">Reset to original file</button>
       </fieldset>
     </div>
-    <p id="status">Loading data&hellip;</p>
+    <p id="status" class="status">Loading data&hellip;</p>
   </div>
 
   <div class="card">
     <div id="chartWrap"><canvas id="chart"></canvas></div>
-    <p class="muted">Coloured points fall inside the selected timeframe and are used for the percentiles. Grey points are outside it and shown for context only. The shaded band marks the timeframe.</p>
+    <p class="muted">Click a point to remove it. Coloured points fall inside the timeframe and are used for the percentiles. Grey points are outside it. The shaded band marks the timeframe.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Percentile lines</h3>
+      <div id="pctList"></div>
+      <button id="addPct" type="button">+ Add percentile</button>
+      <button id="defaultPct" type="button">Reset to 50 / 85 / 95</button>
+      <p class="muted">Change the level to move a line. Enter days in <em>Override</em> to set the line by hand; leave it empty to use the calculated value.</p>
+    </div>
+    <div class="card">
+      <h3>Add data</h3>
+      <form id="addForm" class="row" style="gap:8px;align-items:center">
+        <input type="date" id="newDate" required aria-label="Completion date">
+        <select id="newSize" aria-label="Size"><option>S</option><option>M</option><option>L</option></select>
+        <input type="number" id="newLead" min="0" step="1" placeholder="days" required aria-label="Lead time (days)">
+        <button type="submit">Add item</button>
+      </form>
+      <p id="addStatus" class="status"></p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <div class="row" style="gap:8px;align-items:center">
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+        <select id="uploadMode" aria-label="Upload mode"><option value="append">Add to current data</option><option value="replace">Replace all data</option></select>
+        <button id="uploadBtn" type="button">Upload</button>
+      </div>
+      <p class="muted">Excel or CSV with 3 columns: completion date, size (S/M/L), lead time (days). A header row is optional.</p>
+      <p id="uploadStatus" class="status"></p>
+    </div>
   </div>
 
   <div class="card">
-    <h3 style="margin-top:0">Forecast &ndash; lead time percentiles (days)</h3>
-    <table>
-      <thead><tr><th>Size</th><th>Items</th><th>50%</th><th>85%</th><th>95%</th></tr></thead>
-      <tbody id="stats"></tbody>
-    </table>
+    <h3>Forecast &ndash; lead time percentiles (days) in selected timeframe</h3>
+    <table><thead id="statsHead"></thead><tbody id="stats"></tbody></table>
     <p class="muted">Example: an 85% value of 100 means 85% of items finished within 100 days. Values use the nearest-rank method.</p>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary><strong>All data points</strong> <span id="dataCount" class="muted"></span></summary>
+      <div class="scroll" style="margin-top:8px">
+        <table><thead><tr><th>Completion date</th><th>Size</th><th>Lead time (days)</th><th>Source</th><th></th></tr></thead><tbody id="dataTable"></tbody></table>
+      </div>
+    </details>
   </div>
 </main>
 
 <script>
 const DATA_FILE = 'Lead Times - 2024-25.xlsx';
+const STORE_KEY = 'leadTimeDashboard.v1';
 const SIZES = ['S', 'M', 'L'];
 const COLORS = { S: '#1f6fd1', M: '#ffd60a', L: '#ff8c00' };
-const PERCENTILES = [
-  { p: 50, color: '#2e7d32', dash: [6, 4] },
-  { p: 85, color: '#c62828', dash: [12, 4] },
-  { p: 95, color: '#6a1b9a', dash: [2, 3] }
-];
+const PCT_COLORS = ['#66bb6a', '#ef5350', '#ce93d8', '#4dd0e1', '#f48fb1', '#aed581', '#90a4ae'];
+const PCT_DASH = [[6, 4], [12, 4], [2, 3], [8, 3, 2, 3], [4, 4], [14, 6]];
+const DEFAULT_PCTS = [50, 85, 95];
+const DAY = 864e5;
 // Polish month names (nominative and genitive), plus English fallbacks
 const MONTHS = {
-  stycz: 0, lut: 1, mar: 2, kwie: 3, maj: 4, maja: 4, czerw: 5, lip: 6, sierp: 7, wrze: 8, pa: 9, list: 10, grud: 11,
+  stycz: 0, lut: 1, mar: 2, kwie: 3, maj: 4, czerw: 5, lip: 6, sierp: 7, wrze: 8, pa: 9, list: 10, grud: 11,
   jan: 0, feb: 1, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
 };
+const MONTH_KEYS = Object.keys(MONTHS).sort((a, b) => b.length - a.length);
 
 const $ = id => document.getElementById(id);
-let items = [];
-let quarters = [];
+let fileItems = [];   // rows from the repository file
+let state = { added: [], removed: [], replaced: false, percentiles: [] };
+let pctSeq = 0;
+let userRange = false;
 let chart;
 
+// ---------- Parsing ----------
 function parseDate(v) {
   if (v instanceof Date && !isNaN(v)) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
-  if (typeof v === 'number') { const d = XLSX.SSF.parse_date_code(v); return new Date(d.y, d.m - 1, d.d); }
+  if (typeof v === 'number' && v > 20000 && v < 80000) { const d = XLSX.SSF.parse_date_code(v); return new Date(d.y, d.m - 1, d.d); }
   const s = String(v ?? '').trim().toLowerCase();
-  let m = s.match(/^(\d{1,2})\s+(\p{L}+)\s+(\d{4})$/u);
+  let m = s.match(/^(\d{1,2})\.?\s+(\p{L}+)\.?\s+(\d{4})$/u);
   if (m) {
-    const key = Object.keys(MONTHS).sort((a, b) => b.length - a.length).find(k => m[2].startsWith(k));
+    const key = MONTH_KEYS.find(k => m[2].startsWith(k));
     if (key !== undefined) return new Date(+m[3], MONTHS[key], +m[1]);
   }
-  m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
-  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
   m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
   return null;
 }
+const parseSize = v => { const s = String(v ?? '').trim().toUpperCase(); return SIZES.includes(s) ? s : ({ SMALL: 'S', MEDIUM: 'M', LARGE: 'L' })[s] || null; };
+const parseLead = v => { if (v === null || v === undefined || String(v).trim() === '') return null; const n = Number(String(v).trim().replace(',', '.')); return isFinite(n) && n >= 0 ? n : null; };
 
-function parseSheet(rows) {
-  const header = rows[0].map(h => String(h ?? '').toLowerCase());
-  const find = (re, fallback) => { const i = header.findIndex(h => re.test(h)); return i >= 0 ? i : fallback; };
-  const cDate = find(/data|date|uko|done|finish/, 0);
-  const cSize = find(/rozmiar|size/, 1);
-  const cLead = find(/czas|lead|time|days|dni/, 2);
-  const out = [];
-  for (const r of rows.slice(1)) {
-    const date = parseDate(r[cDate]);
-    const size = String(r[cSize] ?? '').trim().toUpperCase();
-    const lead = Number(String(r[cLead] ?? '').replace(',', '.'));
-    if (date && SIZES.includes(size) && isFinite(lead) && String(r[cLead] ?? '') !== '') out.push({ date, size, lead });
+function parseRows(rows) {
+  rows = rows.filter(r => r && r.some(c => c !== null && String(c).trim() !== ''));
+  if (!rows.length) return { items: [], skipped: 0 };
+  let cols = [0, 1, 2], body = rows;
+  const hasHeader = !rows[0].some(c => parseDate(c)) || parseLead(rows[0][2]) === null;
+  if (hasHeader) {
+    const h = rows[0].map(c => String(c ?? '').toLowerCase());
+    const used = new Set();
+    const find = (re, fb) => { let i = h.findIndex((x, j) => !used.has(j) && re.test(x)); if (i < 0) i = fb; used.add(i); return i; };
+    const cSize = find(/rozmiar|size/, 1);
+    const cLead = find(/czas|lead|cycle|time|days|dni/, 2);
+    const cDate = find(/data|date|uko|done|finish|complet/, 0);
+    cols = [cDate, cSize, cLead];
+    body = rows.slice(1);
   }
-  return out.sort((a, b) => a.date - b.date);
+  const items = []; let skipped = 0;
+  for (const r of body) {
+    const date = parseDate(r[cols[0]]), size = parseSize(r[cols[1]]), lead = parseLead(r[cols[2]]);
+    if (date && size && lead !== null) items.push({ date, size, lead }); else skipped++;
+  }
+  return { items, skipped };
+}
+function readWorkbook(buf) {
+  const wb = XLSX.read(buf, { cellDates: true });
+  return parseRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null }));
 }
 
+// ---------- Helpers ----------
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fmtDate = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtMonth = d => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 function percentile(values, p) {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.max(1, Math.ceil(p / 100 * sorted.length)) - 1];
+  return sorted[Math.min(sorted.length, Math.max(1, Math.ceil(p / 100 * sorted.length))) - 1];
+}
+const pctLabel = p => `P${p}`;
+const newPct = level => ({ id: ++pctSeq, level, override: null });
+
+// ---------- State ----------
+function withKeys(list, prefix) {
+  const seen = {};
+  return list.map(i => { const k = `${prefix}${iso(i.date)}|${i.size}|${i.lead}`; seen[k] = (seen[k] || 0) + 1; return { ...i, uid: `${k}|${seen[k]}` }; });
+}
+function allItems() {
+  const removed = new Set(state.removed);
+  const base = state.replaced ? [] : fileItems.map(i => ({ ...i, source: 'File' }));
+  return [...base, ...state.added.map(a => ({ ...a, date: parseDate(a.date) }))]
+    .map(i => ({ ...i, removed: removed.has(i.uid) }))
+    .sort((a, b) => a.date - b.date);
+}
+function save() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (s && Array.isArray(s.added) && Array.isArray(s.removed) && Array.isArray(s.percentiles)) {
+      state = { added: s.added, removed: s.removed, replaced: !!s.replaced, percentiles: s.percentiles.map(p => ({ ...newPct(+p.level), override: p.override ?? null })) };
+      return true;
+    }
+  } catch (e) { /* ignore corrupt storage */ }
+  state = { added: [], removed: [], replaced: false, percentiles: DEFAULT_PCTS.map(newPct) };
+  return false;
+}
+function addItems(items, source) {
+  const stamp = Date.now().toString(36);
+  const keyed = withKeys(items, `${source[0]}${stamp}:`);
+  state.added.push(...keyed.map(i => ({ uid: i.uid, date: iso(i.date), size: i.size, lead: i.lead, source })));
 }
 
-const quarterStart = d => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3, 1);
-const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
-const quarterLabel = d => `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`;
-const fmtDate = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-const fmtMonth = d => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+// ---------- Rendering ----------
+function selectedSizes() { return SIZES.filter(s => document.querySelector(`.size[value="${s}"]`).checked); }
 
-function setupQuarters() {
-  quarters = [];
-  const last = items[items.length - 1].date;
-  for (let q = quarterStart(items[0].date); q <= last; q = addMonths(q, 3)) quarters.push(q);
-  const opts = (fmt) => quarters.map((q, i) => `<option value="${i}">${fmt(q)}</option>`).join('');
-  $('from').innerHTML = opts(q => `${quarterLabel(q)} (${fmtMonth(q)})`);
-  $('to').innerHTML = opts(q => `${quarterLabel(q)} (${fmtMonth(addMonths(q, 2))})`);
-  $('from').value = 0;
-  $('to').value = quarters.length - 1;
+function syncRange(items) {
+  if (!items.length) return;
+  if (!userRange) { $('from').value = iso(items[0].date); $('to').value = iso(items[items.length - 1].date); }
+}
+function currentRange() {
+  let from = parseDate($('from').value), to = parseDate($('to').value);
+  if (from && to && from > to) [from, to] = [to, from];
+  return { from: from || new Date(-8.64e15), to: to ? new Date(+to + DAY) : new Date(8.64e15) }; // 'to' is inclusive
 }
 
-function render(changed) {
-  let fi = +$('from').value, ti = +$('to').value;
-  if (fi > ti) { if (changed === 'from') $('to').value = ti = fi; else $('from').value = fi = ti; }
-  const from = quarters[fi], to = addMonths(quarters[ti], 3);
-  $('months').textContent = `${(ti - fi + 1) * 3} months`;
-
-  const sizes = SIZES.filter(s => document.querySelector(`.size[value="${s}"]`).checked);
-  const visible = items.filter(i => sizes.includes(i.size));
+function render() {
+  const items = allItems();
+  const active = items.filter(i => !i.removed);
+  syncRange(active.length ? active : items);
+  const { from, to } = currentRange();
+  const sizes = selectedSizes();
   const inside = i => i.date >= from && i.date < to;
+  const visible = active.filter(i => sizes.includes(i.size));
   const used = visible.filter(inside);
   const outside = visible.filter(i => !inside(i));
+  const leads = used.map(i => i.lead);
+  const pcts = state.percentiles.map((p, k) => ({ ...p, k, calc: percentile(leads, p.level) }));
+  pcts.forEach(p => { p.value = p.override ?? p.calc; });
 
-  const xMin = +addMonths(quarters[0], 0) - 7 * 864e5;
-  const xMax = +addMonths(quarters[quarters.length - 1], 3);
-  const point = i => ({ x: +i.date, y: i.lead, size: i.size });
+  const removedCount = items.length - active.length;
+  $('status').classList.remove('error');
+  $('status').textContent = `${active.length} items in use${removedCount ? `, ${removedCount} removed` : ''} · ${used.length} in timeframe for selected sizes`
+    + (state.replaced ? ' · data replaced by upload' : state.added.length ? ` · ${state.added.length} added via UI` : '') + '.';
+  $('restoreAll').disabled = !removedCount;
 
+  drawChart(active, used, outside, pcts, sizes, from, to);
+  renderPctEditor(pcts);
+  renderStats(used, sizes, pcts);
+  renderDataTable(items);
+}
+
+function drawChart(active, used, outside, pcts, sizes, from, to) {
+  if (typeof Chart === 'undefined') return;
+  const ext = active.length ? active : [{ date: new Date() }];
+  const xMin = +ext[0].date - 10 * DAY, xMax = +ext[ext.length - 1].date + 10 * DAY;
+  const point = i => ({ x: +i.date, y: i.lead, size: i.size, uid: i.uid });
   const datasets = sizes.map(s => ({
     type: 'scatter', label: `${s} (${used.filter(i => i.size === s).length})`,
     data: used.filter(i => i.size === s).map(point),
-    backgroundColor: COLORS[s], borderColor: 'rgba(0,0,0,.55)', borderWidth: 1, pointRadius: 6, pointHoverRadius: 8
+    backgroundColor: COLORS[s], borderColor: '#111', borderWidth: 1, pointRadius: 6, pointHoverRadius: 9
   }));
   if (outside.length) datasets.push({
-    type: 'scatter', label: `Outside timeframe (${outside.length})`,
-    data: outside.map(point),
-    backgroundColor: 'rgba(170,170,170,.35)', borderColor: 'rgba(120,120,120,.6)', borderWidth: 1, pointRadius: 5
+    type: 'scatter', label: `Outside timeframe (${outside.length})`, data: outside.map(point),
+    backgroundColor: 'rgba(200,200,200,.25)', borderColor: 'rgba(200,200,200,.5)', borderWidth: 1, pointRadius: 5, pointHoverRadius: 8
   });
-  const leads = used.map(i => i.lead);
-  for (const { p, color, dash } of PERCENTILES) {
-    const v = percentile(leads, p);
-    if (v === null) continue;
+  for (const p of pcts) {
+    if (p.value === null) continue;
     datasets.push({
-      type: 'line', label: `${p}th percentile: ${v} days`,
-      data: [{ x: xMin, y: v }, { x: xMax, y: v }],
-      borderColor: color, backgroundColor: color, borderDash: dash, borderWidth: 2, pointRadius: 0
+      type: 'line', label: `${pctLabel(p.level)}: ${p.value} days${p.override !== null ? ' (manual)' : ''}`,
+      data: [{ x: xMin, y: p.value }, { x: xMax, y: p.value }],
+      borderColor: PCT_COLORS[p.k % PCT_COLORS.length], backgroundColor: PCT_COLORS[p.k % PCT_COLORS.length],
+      borderDash: PCT_DASH[p.k % PCT_DASH.length], borderWidth: 2, pointRadius: 0, pointHoverRadius: 0
     });
   }
-
-  if (chart) chart.destroy();
-  chart = new Chart($('chart'), {
+  const band = { from: +from, to: +to };
+  const cfg = {
     data: { datasets },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       scales: {
         x: { type: 'linear', min: xMin, max: xMax, title: { display: true, text: 'Completion date' },
-             ticks: { stepSize: 30.44 * 864e5, callback: v => fmtMonth(new Date(v)) } },
+             afterBuildTicks: axis => {
+               const ticks = []; const d0 = new Date(xMin);
+               const months = (new Date(xMax).getFullYear() - d0.getFullYear()) * 12 + new Date(xMax).getMonth() - d0.getMonth();
+               const step = Math.max(1, Math.ceil(months / 14));
+               for (let d = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); +d <= xMax; d = new Date(d.getFullYear(), d.getMonth() + step, 1)) ticks.push({ value: +d });
+               axis.ticks = ticks;
+             },
+             ticks: { callback: v => fmtMonth(new Date(v)) } },
         y: { beginAtZero: true, title: { display: true, text: 'Lead time (days)' } }
       },
       plugins: {
         legend: { position: 'bottom' },
-        tooltip: { callbacks: { label: c => c.dataset.type === 'line' ? c.dataset.label
-          : `${c.raw.size}: ${c.raw.y} days (done ${fmtDate(new Date(c.raw.x))})` } }
+        tooltip: { filter: c => c.dataset.type !== 'line', callbacks: {
+          label: c => `${c.raw.size}: ${c.raw.y} days (done ${fmtDate(new Date(c.raw.x))})`,
+          footer: () => 'Click to remove' } }
+      },
+      onHover: (e, els) => { e.native.target.style.cursor = els.some(el => chart.data.datasets[el.datasetIndex].type !== 'line') ? 'pointer' : 'default'; },
+      onClick: (e, els) => {
+        const el = els.find(el => chart.data.datasets[el.datasetIndex].type !== 'line');
+        if (!el) return;
+        removeItem(chart.data.datasets[el.datasetIndex].data[el.index].uid);
       }
     },
     plugins: [{
       id: 'timeframeBand',
       beforeDatasetsDraw({ ctx, chartArea: a, scales: { x } }) {
-        const l = Math.max(a.left, x.getPixelForValue(+from)), r = Math.min(a.right, x.getPixelForValue(+to));
-        ctx.save(); ctx.fillStyle = 'rgba(31,111,209,.07)'; ctx.fillRect(l, a.top, r - l, a.bottom - a.top); ctx.restore();
+        const l = Math.max(a.left, x.getPixelForValue(band.from)), r = Math.min(a.right, x.getPixelForValue(band.to));
+        if (r <= l) return;
+        ctx.save(); ctx.fillStyle = 'rgba(110,168,254,.10)'; ctx.fillRect(l, a.top, r - l, a.bottom - a.top); ctx.restore();
       }
     }]
-  });
+  };
+  if (chart) chart.destroy();
+  chart = new Chart($('chart'), cfg);
+}
 
+function renderPctEditor(pcts) {
+  const list = $('pctList');
+  const focused = document.activeElement && list.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+  list.innerHTML = pcts.map(p => `
+    <div class="pct">
+      <span class="lineSwatch" style="border-color:${PCT_COLORS[p.k % PCT_COLORS.length]}"></span>
+      <label>Level <input type="number" min="1" max="99.9" step="any" value="${p.level}" data-id="${p.id}" data-field="level" data-key="l${p.id}" aria-label="Percentile level"> %</label>
+      <label>Override <input type="number" min="0" step="any" value="${p.override ?? ''}" placeholder="${p.calc ?? '–'}" data-id="${p.id}" data-field="override" data-key="o${p.id}" aria-label="Manual value in days"> days</label>
+      <span class="muted">calculated: ${p.calc ?? '–'}</span>
+      <button type="button" class="danger" data-id="${p.id}" data-field="remove" title="Remove line">✕</button>
+    </div>`).join('') || '<p class="muted">No percentile lines. Add one below.</p>';
+  if (focused) { const el = list.querySelector(`[data-key="${focused}"]`); if (el) { el.focus(); } }
+}
+
+function renderStats(used, sizes, pcts) {
+  pcts = [...pcts].sort((a, b) => a.level - b.level);
+  $('statsHead').innerHTML = `<tr><th>Size</th><th>Items</th>${pcts.map(p => `<th>${p.level}%</th>`).join('')}</tr>`;
   const row = (label, list, swatch, cls) => {
     const l = list.map(i => i.lead);
-    const cell = p => percentile(l, p) ?? '&ndash;';
-    return `<tr class="${cls || ''}"><td>${swatch ? `<span class="swatch" style="background:${swatch}"></span>` : ''}${label}</td>
-      <td>${l.length}</td><td>${cell(50)}</td><td>${cell(85)}</td><td>${cell(95)}</td></tr>`;
+    return `<tr class="${cls || ''}"><td>${swatch ? `<span class="swatch" style="background:${swatch}"></span>` : ''}${label}</td><td>${l.length}</td>`
+      + pcts.map(p => `<td>${percentile(l, p.level) ?? '&ndash;'}</td>`).join('') + '</tr>';
   };
   $('stats').innerHTML = sizes.map(s => row(s, used.filter(i => i.size === s), COLORS[s])).join('')
     + row(`All selected sizes (${sizes.join(', ') || 'none'})`, used, null, 'total');
 }
 
+function renderDataTable(items) {
+  $('dataCount').textContent = `(${items.length})`;
+  $('dataTable').innerHTML = items.map(i => `<tr class="${i.removed ? 'removed' : ''}">
+    <td>${fmtDate(i.date)}</td><td><span class="swatch" style="background:${COLORS[i.size]}"></span>${i.size}</td><td>${i.lead}</td><td>${i.source}</td>
+    <td><button type="button" data-uid="${i.uid}" class="${i.removed ? '' : 'danger'}">${i.removed ? 'Restore' : 'Remove'}</button></td></tr>`).join('');
+}
+
+// ---------- Actions ----------
+function removeItem(uid) { if (!state.removed.includes(uid)) state.removed.push(uid); save(); render(); }
+function restoreItem(uid) { state.removed = state.removed.filter(u => u !== uid); save(); render(); }
+
+function bind() {
+  document.querySelectorAll('.size').forEach(cb => cb.addEventListener('change', render));
+  ['from', 'to'].forEach(id => $(id).addEventListener('change', () => { userRange = true; render(); }));
+  $('fullRange').addEventListener('click', () => { userRange = false; render(); });
+  $('restoreAll').addEventListener('click', () => { state.removed = []; save(); render(); });
+  $('resetAll').addEventListener('click', () => {
+    if (!confirm('Discard all added, removed and uploaded data and percentile changes?')) return;
+    try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+    load(); userRange = false; render();
+  });
+  $('dataTable').addEventListener('click', e => {
+    const uid = e.target.dataset?.uid; if (!uid) return;
+    state.removed.includes(uid) ? restoreItem(uid) : removeItem(uid);
+  });
+
+  $('pctList').addEventListener('change', e => {
+    const { id, field } = e.target.dataset; const p = state.percentiles.find(x => x.id === +id);
+    if (!p) return;
+    if (field === 'level') { const v = Number(e.target.value); if (v > 0 && v < 100) p.level = v; }
+    if (field === 'override') { const v = e.target.value.trim(); p.override = v === '' || !(Number(v) >= 0) ? null : Number(v); }
+    save(); render();
+  });
+  $('pctList').addEventListener('click', e => {
+    if (e.target.dataset.field !== 'remove') return;
+    state.percentiles = state.percentiles.filter(x => x.id !== +e.target.dataset.id); save(); render();
+  });
+  $('addPct').addEventListener('click', () => { state.percentiles.push(newPct(70)); save(); render(); });
+  $('defaultPct').addEventListener('click', () => { state.percentiles = DEFAULT_PCTS.map(newPct); save(); render(); });
+
+  $('addForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const date = parseDate($('newDate').value), lead = parseLead($('newLead').value), size = $('newSize').value;
+    if (!date || lead === null) { $('addStatus').textContent = 'Enter a valid date and lead time.'; $('addStatus').classList.add('error'); return; }
+    addItems([{ date, size, lead }], 'Manual'); save(); render();
+    $('addStatus').classList.remove('error');
+    $('addStatus').textContent = `Added ${size} item: ${lead} days, done ${fmtDate(date)}.`;
+    $('newLead').value = '';
+  });
+
+  $('uploadBtn').addEventListener('click', async () => {
+    const f = $('fileInput').files[0], st = $('uploadStatus');
+    st.classList.remove('error');
+    if (!f) { st.textContent = 'Choose a file first.'; st.classList.add('error'); return; }
+    try {
+      const { items, skipped } = readWorkbook(await f.arrayBuffer());
+      if (!items.length) throw new Error('no valid rows (expected date, size S/M/L, lead time)');
+      if ($('uploadMode').value === 'replace') { state.added = []; state.removed = []; state.replaced = true; }
+      addItems(items, 'Upload'); save(); render();
+      st.textContent = `${$('uploadMode').value === 'replace' ? 'Replaced data with' : 'Added'} ${items.length} items from "${f.name}"${skipped ? `, skipped ${skipped} invalid rows` : ''}.`;
+      $('fileInput').value = '';
+    } catch (err) { st.textContent = `Could not read "${f.name}": ${err.message}`; st.classList.add('error'); }
+  });
+}
+
 async function init() {
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.color = '#d0d0d0';
+    Chart.defaults.borderColor = 'rgba(255,255,255,.12)';
+  }
+  const restored = load();
+  bind();
   try {
     const resp = await fetch(encodeURI(DATA_FILE));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const wb = XLSX.read(await resp.arrayBuffer(), { cellDates: true });
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: null });
-    items = parseSheet(rows);
-    if (!items.length) throw new Error('no valid rows found');
-    $('status').textContent = `Loaded ${items.length} completed items (${fmtDate(items[0].date)} – ${fmtDate(items[items.length - 1].date)}).`;
+    fileItems = withKeys(readWorkbook(await resp.arrayBuffer()).items, 'f:');
   } catch (e) {
-    $('status').textContent = `Could not load "${DATA_FILE}": ${e.message}`;
-    $('status').className = 'error';
+    fileItems = [];
+    render();
+    $('status').textContent = `Could not load "${DATA_FILE}": ${e.message}. You can still add or upload data.`;
+    $('status').classList.add('error');
     return;
   }
-  setupQuarters();
-  document.querySelectorAll('.size').forEach(cb => cb.addEventListener('change', () => render()));
-  $('from').addEventListener('change', () => render('from'));
-  $('to').addEventListener('change', () => render('to'));
   render();
+  if (restored && (state.added.length || state.removed.length || state.replaced)) $('status').textContent += ' Your earlier edits were restored.';
 }
 init();
 </script>

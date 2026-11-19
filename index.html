@@ -28,6 +28,14 @@
   .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin: 0 4px; border: 1px solid rgba(0,0,0,.6); }
   .lineSwatch { display: inline-block; width: 22px; border-top: 3px dashed; vertical-align: middle; margin-right: 6px; }
   #chartWrap { position: relative; height: 520px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: -1px; }
+  .tab { background: #2b2b2b; border: 1px solid var(--line); border-bottom: 0; border-radius: 8px 8px 0 0; padding: 8px 16px; font-size: .95rem; color: var(--muted); }
+  .tab[aria-selected=true] { background: var(--card); color: var(--text); font-weight: 600; }
+  .tabPanel { border-top: 1px solid var(--line); padding-top: 16px; margin-bottom: 16px; }
+  .tabPanel[hidden] { display: none; }
+  .pbcWrap { position: relative; height: 380px; }
+  .pbcWrap.small { height: 260px; }
+  .signal { color: #ff8a80; font-weight: 600; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: center; }
   th { color: var(--muted); font-weight: 600; }
@@ -72,19 +80,52 @@
     <p id="status" class="status">Loading data&hellip;</p>
   </div>
 
+  <div class="tabs" role="tablist">
+    <button type="button" class="tab" role="tab" id="tabBtn-scatter" data-tab="scatter" aria-selected="true">Lead time scatterplot</button>
+    <button type="button" class="tab" role="tab" id="tabBtn-pbc" data-tab="pbc" aria-selected="false">Process Behaviour Chart (XmR)</button>
+  </div>
+  <section class="tabPanel" id="tab-scatter" role="tabpanel">
   <div class="card">
     <div id="chartWrap"><canvas id="chart"></canvas></div>
     <p class="muted">Click a point to remove it. Coloured points fall inside the timeframe and are used for the percentiles. Grey points are outside it. The shaded band marks the timeframe.</p>
   </div>
 
+  <div class="card">
+    <h3>Percentile lines</h3>
+    <div id="pctList"></div>
+    <button id="addPct" type="button">+ Add percentile</button>
+    <button id="defaultPct" type="button">Reset to 50 / 85 / 95</button>
+    <p class="muted">Change the level to move a line. Enter days in <em>Override</em> to set the line by hand; leave it empty to use the calculated value.</p>
+  </div>
+  <div class="card">
+    <h3>Forecast &ndash; lead time percentiles (days) in selected timeframe</h3>
+    <table><thead id="statsHead"></thead><tbody id="stats"></tbody></table>
+    <p class="muted">Example: an 85% value of 100 means 85% of items finished within 100 days. Values use the nearest-rank method.</p>
+  </div>
+
+  </section>
+
+  <section class="tabPanel" id="tab-pbc" role="tabpanel" hidden>
+  <div class="card">
+    <h3>X chart &ndash; individual lead times (days)</h3>
+    <div class="pbcWrap"><canvas id="xChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>mR chart &ndash; moving ranges (days)</h3>
+    <div class="pbcWrap small"><canvas id="mrChart"></canvas></div>
+  </div>
+  <div class="card">
+    <h3>Process limits</h3>
+    <table><thead><tr><th>Measure</th><th>Value (days)</th><th>Formula</th></tr></thead><tbody id="pbcStats"></tbody></table>
+    <p id="pbcSignals" class="status"></p>
+    <p class="muted">Shewhart XmR chart. Items are plotted one per point in completion-date order, using the size filter, timeframe and removed points set above. Limits use the average moving range (mR&#772;):
+      UNPL = X&#772; + 2.66&middot;mR&#772;, LNPL = X&#772; &minus; 2.66&middot;mR&#772;, URL = 3.268&middot;mR&#772;.
+      Lead times can't be negative, so a negative LNPL means there is no lower limit and it is drawn at 0.
+      Red points are signals outside the limits.</p>
+  </div>
+  </section>
+
   <div class="grid2">
-    <div class="card">
-      <h3>Percentile lines</h3>
-      <div id="pctList"></div>
-      <button id="addPct" type="button">+ Add percentile</button>
-      <button id="defaultPct" type="button">Reset to 50 / 85 / 95</button>
-      <p class="muted">Change the level to move a line. Enter days in <em>Override</em> to set the line by hand; leave it empty to use the calculated value.</p>
-    </div>
     <div class="card">
       <h3>Add data</h3>
       <form id="addForm" class="row" style="gap:8px;align-items:center">
@@ -103,12 +144,6 @@
       <p class="muted">Excel or CSV with 3 columns: completion date, size (S/M/L), lead time (days). A header row is optional.</p>
       <p id="uploadStatus" class="status"></p>
     </div>
-  </div>
-
-  <div class="card">
-    <h3>Forecast &ndash; lead time percentiles (days) in selected timeframe</h3>
-    <table><thead id="statsHead"></thead><tbody id="stats"></tbody></table>
-    <p class="muted">Example: an 85% value of 100 means 85% of items finished within 100 days. Values use the nearest-rank method.</p>
   </div>
 
   <div class="card">
@@ -142,7 +177,7 @@ let fileItems = [];   // rows from the repository file
 let state = { added: [], removed: [], replaced: false, percentiles: [] };
 let pctSeq = 0;
 let userRange = false;
-let chart;
+let chart, xChart, mrChart;
 
 // ---------- Parsing ----------
 function parseDate(v) {
@@ -268,6 +303,7 @@ function render() {
   $('restoreAll').disabled = !removedCount;
 
   drawChart(active, used, outside, pcts, sizes, from, to);
+  drawPbc(used);
   renderPctEditor(pcts);
   renderStats(used, sizes, pcts);
   renderDataTable(items);
@@ -372,11 +408,125 @@ function renderDataTable(items) {
     <td><button type="button" data-uid="${i.uid}" class="${i.removed ? '' : 'danger'}">${i.removed ? 'Restore' : 'Remove'}</button></td></tr>`).join('');
 }
 
+// ---------- Process Behaviour Chart (Shewhart XmR) ----------
+const XMR = { E2: 2.66, D4: 3.268 };
+const LIMIT_STYLE = {
+  avg: { color: '#e6e6e6', dash: [] },
+  unpl: { color: '#ef5350', dash: [8, 4] },
+  lnpl: { color: '#ef5350', dash: [8, 4] },
+  mrAvg: { color: '#e6e6e6', dash: [] },
+  url: { color: '#ef5350', dash: [8, 4] }
+};
+const round1 = v => Math.round(v * 10) / 10;
+
+function xmr(values) {
+  const n = values.length;
+  const mr = values.map((v, i) => i ? Math.abs(v - values[i - 1]) : null);
+  const mean = n ? values.reduce((a, b) => a + b, 0) / n : null;
+  const mrs = mr.slice(1);
+  const mrBar = mrs.length ? mrs.reduce((a, b) => a + b, 0) / mrs.length : null;
+  if (mean === null || mrBar === null) return { n, mr, mean, mrBar, unpl: null, lnpl: null, url: null, signals: { x: new Set(), mr: new Set(), run: new Set() } };
+  const unpl = mean + XMR.E2 * mrBar, lnplRaw = mean - XMR.E2 * mrBar, url = XMR.D4 * mrBar;
+  const signals = { x: new Set(), mr: new Set(), run: new Set() };
+  values.forEach((v, i) => { if (v > unpl || v < lnplRaw) signals.x.add(i); });
+  mr.forEach((v, i) => { if (v !== null && v > url) signals.mr.add(i); });
+  // Run of 8 or more successive points on the same side of the average
+  let start = 0;
+  for (let i = 1; i <= n; i++) {
+    const side = k => Math.sign(values[k] - mean);
+    if (i === n || side(i) === 0 || side(i) !== side(start)) {
+      if (side(start) !== 0 && i - start >= 8) for (let k = start; k < i; k++) signals.run.add(k);
+      start = i;
+    }
+  }
+  return { n, mr, mean, mrBar, unpl, lnplRaw, lnpl: Math.max(0, lnplRaw), url, signals };
+}
+
+function drawPbc(used) {
+  const items = [...used].sort((a, b) => a.date - b.date);
+  const r = xmr(items.map(i => i.lead));
+  const fmt = v => v === null ? '&ndash;' : round1(v);
+  $('pbcStats').innerHTML = [
+    ['Items (n)', r.n, ''],
+    ['Average X&#772; (arithmetic mean)', fmt(r.mean), '&Sigma;X / n'],
+    ['UNPL &ndash; upper natural process limit', fmt(r.unpl), 'X&#772; + 2.66&middot;mR&#772;'],
+    ['LNPL &ndash; lower natural process limit', r.lnplRaw === undefined ? '&ndash;' : r.lnplRaw < 0 ? `0 <span class="muted">(calculated ${round1(r.lnplRaw)}, no lower limit)</span>` : fmt(r.lnpl), 'X&#772; &minus; 2.66&middot;mR&#772;'],
+    ['Average moving range mR&#772;', fmt(r.mrBar), '&Sigma;|X<sub>i</sub> &minus; X<sub>i&minus;1</sub>| / (n &minus; 1)'],
+    ['URL &ndash; upper range limit', fmt(r.url), '3.268&middot;mR&#772;']
+  ].map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td class="muted">${c}</td></tr>`).join('');
+
+  const sig = $('pbcSignals');
+  if (r.n < 2) sig.innerHTML = 'At least 2 items are needed to calculate limits.';
+  else {
+    const list = (set, what) => set.size ? `<span class="signal">${set.size} ${what}</span>` : null;
+    const parts = [list(r.signals.x, 'point(s) outside natural process limits'), list(r.signals.mr, 'moving range(s) above URL'),
+      r.signals.run.size ? `<span class="signal">a run of 8+ points on one side of the average (${r.signals.run.size} points)</span>` : null].filter(Boolean);
+    sig.innerHTML = parts.length ? `Signals: ${parts.join(' · ')}.` : 'No signals: the process looks predictable within these limits.';
+    if (r.n < 6) sig.innerHTML += ' <span class="muted">Few points: treat these limits as tentative.</span>';
+  }
+
+  if (typeof Chart === 'undefined') return;
+  const labels = items.map((i, k) => `#${k + 1} ${fmtDate(i.date)}`);
+  const flat = (v, n) => Array(n).fill(v === null ? null : round1(v));
+  const limitDs = (label, v, style, n) => ({
+    type: 'line', label: `${label}: ${round1(v)}`, data: flat(v, n), borderColor: style.color, backgroundColor: style.color,
+    borderDash: style.dash, borderWidth: 2, pointRadius: 0, pointHoverRadius: 0, isLimit: true
+  });
+  const pointColors = items.map(i => COLORS[i.size]);
+  const ring = set => items.map((_, k) => set.has(k) ? '#ff1744' : '#111');
+  const ringW = set => items.map((_, k) => set.has(k) ? 3 : 1);
+  const xSig = new Set([...r.signals.x, ...r.signals.run]);
+
+  const common = (yTitle, onClickData) => ({
+    responsive: true, maintainAspectRatio: false, animation: false,
+    scales: { x: { ticks: { maxRotation: 60, autoSkip: true, maxTicksLimit: 20, callback(v) { return this.getLabelForValue(v).replace(/^#\d+ /, ''); } } },
+              y: { beginAtZero: true, title: { display: true, text: yTitle } } },
+    plugins: { legend: { position: 'bottom', labels: { filter: l => l.text !== 'data' } },
+               tooltip: { filter: c => !c.dataset.isLimit, callbacks: { label: onClickData, footer: () => 'Click to remove' } } },
+    onClick: (e, els, ch) => { const el = els.find(el => !ch.data.datasets[el.datasetIndex].isLimit); if (el && items[el.index]) removeItem(items[el.index].uid); }
+  });
+
+  if (xChart) xChart.destroy();
+  xChart = new Chart($('xChart'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'data', data: items.map(i => i.lead), borderColor: 'rgba(200,200,200,.45)', borderWidth: 1.5,
+        pointBackgroundColor: pointColors, pointBorderColor: ring(xSig), pointBorderWidth: ringW(xSig), pointRadius: 6, pointHoverRadius: 9 },
+      ...(r.mean === null ? [] : [
+        limitDs('Average X̄', r.mean, LIMIT_STYLE.avg, items.length),
+        limitDs('UNPL', r.unpl, LIMIT_STYLE.unpl, items.length),
+        limitDs(r.lnplRaw < 0 ? 'LNPL (none, shown at 0)' : 'LNPL', r.lnpl, LIMIT_STYLE.lnpl, items.length)])
+    ] },
+    options: common('Lead time (days)', c => `${items[c.dataIndex].size}: ${c.raw} days`)
+  });
+
+  if (mrChart) mrChart.destroy();
+  mrChart = new Chart($('mrChart'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'data', data: r.mr, borderColor: 'rgba(200,200,200,.45)', borderWidth: 1.5, spanGaps: false,
+        pointBackgroundColor: 'rgba(200,200,200,.85)', pointBorderColor: ring(r.signals.mr), pointBorderWidth: ringW(r.signals.mr), pointRadius: 5, pointHoverRadius: 8 },
+      ...(r.mrBar === null ? [] : [
+        limitDs('Average mR̄', r.mrBar, LIMIT_STYLE.mrAvg, items.length),
+        limitDs('URL', r.url, LIMIT_STYLE.url, items.length)])
+    ] },
+    options: common('Moving range (days)', c => `mR: ${c.raw} days`)
+  });
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  document.querySelectorAll('.tabPanel').forEach(p => { p.hidden = p.id !== `tab-${name}`; });
+  if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`);
+  render(); // charts drawn while hidden have no size
+}
+
 // ---------- Actions ----------
 function removeItem(uid) { if (!state.removed.includes(uid)) state.removed.push(uid); save(); render(); }
 function restoreItem(uid) { state.removed = state.removed.filter(u => u !== uid); save(); render(); }
 
 function bind() {
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   document.querySelectorAll('.size').forEach(cb => cb.addEventListener('change', render));
   ['from', 'to'].forEach(id => $(id).addEventListener('change', () => { userRange = true; render(); }));
   $('fullRange').addEventListener('click', () => { userRange = false; render(); });
@@ -437,6 +587,7 @@ async function init() {
   }
   const restored = load();
   bind();
+  if (location.hash === '#pbc') { document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === 'pbc'))); $('tab-scatter').hidden = true; $('tab-pbc').hidden = false; }
   try {
     const resp = await fetch(encodeURI(DATA_FILE));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

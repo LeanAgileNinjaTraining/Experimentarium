@@ -111,6 +111,13 @@
 
   <section class="tabPanel" id="tab-pbc" role="tabpanel" hidden>
   <div class="card">
+    <fieldset>
+      <legend>Central line and limits based on</legend>
+      <label><input type="radio" name="pbcMode" value="median"> Medians (X&#771;, mR&#771;)</label>
+      <label><input type="radio" name="pbcMode" value="mean"> Averages (X&#772;, mR&#772;)</label>
+    </fieldset>
+  </div>
+  <div class="card">
     <h3>X chart &ndash; individual lead times (days)</h3>
     <div class="pbcWrap"><canvas id="xChart"></canvas></div>
   </div>
@@ -122,10 +129,11 @@
     <h3>Process limits</h3>
     <table><thead><tr><th>Measure</th><th>Value (days)</th><th>Formula</th></tr></thead><tbody id="pbcStats"></tbody></table>
     <p id="pbcSignals" class="status"></p>
-    <p class="muted">Shewhart XmR chart. Items are plotted one per point in completion-date order, using the size filter, timeframe and removed points set above. Limits use the average moving range (mR&#772;):
-      UNPL = X&#772; + 2.66&middot;mR&#772;, LNPL = X&#772; &minus; 2.66&middot;mR&#772;, URL = 3.268&middot;mR&#772;.
+    <p class="muted">Shewhart XmR chart. Items are plotted one per point in completion-date order, using the size filter, timeframe and removed points set above.
+      <strong>Medians:</strong> UNPL/LNPL = X&#771; &plusmn; 3.145&middot;mR&#771;, URL = 3.865&middot;mR&#771;.
+      <strong>Averages:</strong> UNPL/LNPL = X&#772; &plusmn; 2.66&middot;mR&#772;, URL = 3.268&middot;mR&#772;.
       Lead times can't be negative, so a negative LNPL means there is no lower limit and it is drawn at 0.
-      Red points are signals outside the limits.</p>
+      Red-ringed points are signals.</p>
   </div>
   </section>
 
@@ -141,7 +149,13 @@
       <fieldset>
         <legend>Delivery rate per</legend>
         <label><input type="radio" name="tpGroup" value="day" checked> Day</label>
-        <label><input type="radio" name="tpGroup" value="week"> Week (Mon&ndash;Sun)</label>
+        <label><input type="radio" name="tpGroup" value="week"> Week</label>
+        <label><input type="checkbox" id="tpWorkdays" checked> Workdays only (Mon&ndash;Fri)</label>
+      </fieldset>
+      <fieldset>
+        <legend>Central line and limits based on</legend>
+        <label><input type="radio" name="tpMode" value="median"> Medians (X&#771;, mR&#771;)</label>
+        <label><input type="radio" name="tpMode" value="mean"> Averages (X&#772;, mR&#772;)</label>
       </fieldset>
     </div>
     <p id="tpStatus" class="status">Loading <em>Throughput Daily.xlsx</em>&hellip;</p>
@@ -158,12 +172,44 @@
     <div class="card">
       <h3>Limits and zone borders</h3>
       <table><thead><tr><th>Line</th><th>Value</th><th>Formula</th></tr></thead><tbody id="tpStats"></tbody></table>
-      <p class="muted">&sigma; = mR&#772; / 1.128 (sigma estimated from the moving ranges). UNPL and LNPL are the 3&sigma; lines (X&#772; &plusmn; 2.66&middot;mR&#772;). A delivery rate can't be negative, so lines below 0 can't be crossed and are not drawn.</p>
+      <p class="muted"><strong>Medians:</strong> &sigma; = mR&#771; / 0.954, UNPL/LNPL = X&#771; &plusmn; 3.145&middot;mR&#771;, URL = 3.865&middot;mR&#771;.
+        <strong>Averages:</strong> &sigma; = mR&#772; / 1.128, UNPL/LNPL = X&#772; &plusmn; 2.66&middot;mR&#772;, URL = 3.268&middot;mR&#772;.
+        A delivery rate can't be negative, so lines below 0 can't be crossed and are not drawn.</p>
     </div>
     <div class="card">
       <h3>Signals (Wheeler detection rules)</h3>
       <table><thead><tr><th>Rule</th><th>Points</th><th>What it means</th></tr></thead><tbody id="tpRules"></tbody></table>
       <p id="tpSignalDates" class="muted"></p>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Add or change data</h3>
+      <form id="tpAddForm" class="row" style="gap:8px;align-items:center">
+        <input type="date" id="tpNewDate" required aria-label="Date">
+        <input type="number" id="tpNewValue" min="0" step="1" placeholder="items" required aria-label="Items delivered">
+        <button type="submit">Add / update day</button>
+      </form>
+      <p id="tpAddStatus" class="status"></p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <div class="row" style="gap:8px;align-items:center">
+        <input type="file" id="tpFileInput" accept=".xlsx,.xls,.csv">
+        <button id="tpUploadBtn" type="button">Upload</button>
+      </div>
+      <p class="muted">Excel or CSV with 2 columns: date, items delivered. A header row is optional. Dates that already exist are updated.</p>
+      <p id="tpUploadStatus" class="status"></p>
+    </div>
+    <div class="card">
+      <h3>Data points</h3>
+      <p class="muted">Click a point on the daily X chart, or use the table, to remove a day. Removed days are left out of all calculations.</p>
+      <button id="tpRestoreAll" type="button">Restore removed days</button>
+      <button id="tpReset" type="button" class="danger">Reset to original file</button>
+      <details style="margin-top:8px">
+        <summary><strong>All days</strong> <span id="tpDataCount" class="muted"></span></summary>
+        <div class="scroll" style="margin-top:8px">
+          <table><thead><tr><th>Date</th><th>Day</th><th>Items</th><th>Source</th><th></th></tr></thead><tbody id="tpDataTable"></tbody></table>
+        </div>
+      </details>
     </div>
   </div>
   </section>
@@ -452,7 +498,56 @@ function renderDataTable(items) {
 }
 
 // ---------- Process Behaviour Chart (Shewhart XmR) ----------
-const XMR = { E2: 2.66, D4: 3.268 };
+// Scaling factors for XmR limits (Wheeler): average-based and median-based
+const XMR_K = {
+  mean: { lim: 2.66, url: 3.268, d2: 1.128, cx: 'X̄', cmr: 'mR̄', word: 'Average' },
+  median: { lim: 3.145, url: 3.865, d2: 0.954, cx: 'X̃', cmr: 'mR̃', word: 'Median' }
+};
+const MODE_KEY = 'leadTimeDashboard.xmrMode';
+let xmrMode = (() => { try { return localStorage.getItem(MODE_KEY) === 'mean' ? 'mean' : 'median'; } catch (e) { return 'median'; } })();
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+const median = a => { const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+
+// XmR limits plus Wheeler's detection rules (1: outside limits, 2: 2 of 3 beyond 2σ,
+// 3: 4 of 5 beyond 1σ, 4: run of 8 on one side of the central line) and mR above URL.
+function xmrCalc(values, mode) {
+  const k = XMR_K[mode], n = values.length;
+  const mr = values.map((v, i) => i ? Math.abs(v - values[i - 1]) : null);
+  const res = { n, mode, k, mr, center: null, mrCenter: null, sigma: null, unpl: null, lnpl: null, url: null, hits: values.map(() => new Set()), mrHits: new Set() };
+  if (!n) return res;
+  const agg = mode === 'median' ? median : mean;
+  res.center = agg(values);
+  if (n < 2) return res;
+  const mrC = agg(mr.slice(1));
+  Object.assign(res, { mrCenter: mrC, sigma: mrC / k.d2, unpl: res.center + k.lim * mrC, lnpl: res.center - k.lim * mrC, url: k.url * mrC });
+  if (mrC === 0) return res;
+  const c = res.center, z = values.map(v => (v - c) / res.sigma);
+  values.forEach((v, i) => { if (v > res.unpl || v < res.lnpl) res.hits[i].add(1); });
+  const scan = (len, need, limit, rule) => {
+    for (let i = 0; i + len <= n; i++) for (const side of [1, -1]) {
+      const idx = []; for (let j = i; j < i + len; j++) if (z[j] * side > limit) idx.push(j);
+      if (idx.length >= need) idx.forEach(j => res.hits[j].add(rule));
+    }
+  };
+  scan(3, 2, 2, 2);
+  scan(5, 4, 1, 3);
+  let start = 0;
+  for (let i = 1; i <= n; i++) {
+    if (i === n || Math.sign(z[i]) === 0 || Math.sign(z[i]) !== Math.sign(z[start])) {
+      if (Math.sign(z[start]) !== 0 && i - start >= 8) for (let j = start; j < i; j++) res.hits[j].add(4);
+      start = i;
+    }
+  }
+  mr.forEach((v, i) => { if (v !== null && v > res.url) res.mrHits.add(i); });
+  return res;
+}
+
+function setXmrMode(mode) {
+  xmrMode = mode;
+  try { localStorage.setItem(MODE_KEY, mode); } catch (e) { /* ignore */ }
+  document.querySelectorAll('input[name=pbcMode], input[name=tpMode]').forEach(r => { r.checked = r.value === mode; });
+}
+
 const LIMIT_STYLE = {
   avg: { color: '#e6e6e6', dash: [] },
   unpl: { color: '#ef5350', dash: [8, 4] },
@@ -462,50 +557,30 @@ const LIMIT_STYLE = {
 };
 const round1 = v => Math.round(v * 10) / 10;
 
-function xmr(values) {
-  const n = values.length;
-  const mr = values.map((v, i) => i ? Math.abs(v - values[i - 1]) : null);
-  const mean = n ? values.reduce((a, b) => a + b, 0) / n : null;
-  const mrs = mr.slice(1);
-  const mrBar = mrs.length ? mrs.reduce((a, b) => a + b, 0) / mrs.length : null;
-  if (mean === null || mrBar === null) return { n, mr, mean, mrBar, unpl: null, lnpl: null, url: null, signals: { x: new Set(), mr: new Set(), run: new Set() } };
-  const unpl = mean + XMR.E2 * mrBar, lnplRaw = mean - XMR.E2 * mrBar, url = XMR.D4 * mrBar;
-  const signals = { x: new Set(), mr: new Set(), run: new Set() };
-  values.forEach((v, i) => { if (v > unpl || v < lnplRaw) signals.x.add(i); });
-  mr.forEach((v, i) => { if (v !== null && v > url) signals.mr.add(i); });
-  // Run of 8 or more successive points on the same side of the average
-  let start = 0;
-  for (let i = 1; i <= n; i++) {
-    const side = k => Math.sign(values[k] - mean);
-    if (i === n || side(i) === 0 || side(i) !== side(start)) {
-      if (side(start) !== 0 && i - start >= 8) for (let k = start; k < i; k++) signals.run.add(k);
-      start = i;
-    }
-  }
-  return { n, mr, mean, mrBar, unpl, lnplRaw, lnpl: Math.max(0, lnplRaw), url, signals };
-}
-
 function drawPbc(used) {
   const items = [...used].sort((a, b) => a.date - b.date);
-  const r = xmr(items.map(i => i.lead));
-  const fmt = v => v === null ? '&ndash;' : round1(v);
+  const r = xmrCalc(items.map(i => i.lead), xmrMode);
+  const k = r.k, fmt = v => v === null ? '&ndash;' : round1(v);
+  const signals = { x: new Set(), mr: r.mrHits, run: new Set() };
+  r.hits.forEach((h, i) => { if (h.has(1)) signals.x.add(i); if (h.has(4)) signals.run.add(i); });
   $('pbcStats').innerHTML = [
     ['Items (n)', r.n, ''],
-    ['Average X&#772; (arithmetic mean)', fmt(r.mean), '&Sigma;X / n'],
-    ['UNPL &ndash; upper natural process limit', fmt(r.unpl), 'X&#772; + 2.66&middot;mR&#772;'],
-    ['LNPL &ndash; lower natural process limit', r.lnplRaw === undefined ? '&ndash;' : r.lnplRaw < 0 ? `0 <span class="muted">(calculated ${round1(r.lnplRaw)}, no lower limit)</span>` : fmt(r.lnpl), 'X&#772; &minus; 2.66&middot;mR&#772;'],
-    ['Average moving range mR&#772;', fmt(r.mrBar), '&Sigma;|X<sub>i</sub> &minus; X<sub>i&minus;1</sub>| / (n &minus; 1)'],
-    ['URL &ndash; upper range limit', fmt(r.url), '3.268&middot;mR&#772;']
+    [`${k.word} ${k.cx} (central line)`, fmt(r.center), xmrMode === 'median' ? 'median of X' : '&Sigma;X / n'],
+    ['UNPL &ndash; upper natural process limit', fmt(r.unpl), `${k.cx} + ${k.lim}&middot;${k.cmr}`],
+    ['LNPL &ndash; lower natural process limit', r.lnpl === null ? '&ndash;' : r.lnpl < 0 ? `0 <span class="muted">(calculated ${round1(r.lnpl)}, no lower limit)</span>` : fmt(r.lnpl), `${k.cx} &minus; ${k.lim}&middot;${k.cmr}`],
+    [`${k.word} moving range ${k.cmr}`, fmt(r.mrCenter), xmrMode === 'median' ? 'median of |X<sub>i</sub> &minus; X<sub>i&minus;1</sub>|' : '&Sigma;|X<sub>i</sub> &minus; X<sub>i&minus;1</sub>| / (n &minus; 1)'],
+    ['URL &ndash; upper range limit', fmt(r.url), `${k.url}&middot;${k.cmr}`]
   ].map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td class="muted">${c}</td></tr>`).join('');
 
   const sig = $('pbcSignals');
   if (r.n < 2) sig.innerHTML = 'At least 2 items are needed to calculate limits.';
   else {
     const list = (set, what) => set.size ? `<span class="signal">${set.size} ${what}</span>` : null;
-    const parts = [list(r.signals.x, 'point(s) outside natural process limits'), list(r.signals.mr, 'moving range(s) above URL'),
-      r.signals.run.size ? `<span class="signal">a run of 8+ points on one side of the average (${r.signals.run.size} points)</span>` : null].filter(Boolean);
+    const parts = [list(signals.x, 'point(s) outside natural process limits'), list(signals.mr, 'moving range(s) above URL'),
+      signals.run.size ? `<span class="signal">a run of 8+ points on one side of the ${k.word.toLowerCase()} (${signals.run.size} points)</span>` : null].filter(Boolean);
     sig.innerHTML = parts.length ? `Signals: ${parts.join(' · ')}.` : 'No signals: the process looks predictable within these limits.';
     if (r.n < 6) sig.innerHTML += ' <span class="muted">Few points: treat these limits as tentative.</span>';
+    if (r.mrCenter === 0) sig.innerHTML = `The ${k.word.toLowerCase()} moving range is 0, so limits can't be calculated. Try averages.`;
   }
 
   if (typeof Chart === 'undefined') return;
@@ -518,7 +593,7 @@ function drawPbc(used) {
   const pointColors = items.map(i => COLORS[i.size]);
   const ring = set => items.map((_, k) => set.has(k) ? '#ff1744' : '#111');
   const ringW = set => items.map((_, k) => set.has(k) ? 3 : 1);
-  const xSig = new Set([...r.signals.x, ...r.signals.run]);
+  const xSig = new Set([...signals.x, ...signals.run]);
 
   const common = (yTitle, onClickData) => ({
     responsive: true, maintainAspectRatio: false, animation: false,
@@ -535,10 +610,10 @@ function drawPbc(used) {
     data: { labels, datasets: [
       { label: 'data', data: items.map(i => i.lead), borderColor: 'rgba(200,200,200,.45)', borderWidth: 1.5,
         pointBackgroundColor: pointColors, pointBorderColor: ring(xSig), pointBorderWidth: ringW(xSig), pointRadius: 6, pointHoverRadius: 9 },
-      ...(r.mean === null ? [] : [
-        limitDs('Average X̄', r.mean, LIMIT_STYLE.avg, items.length),
+      ...(r.center === null ? [] : [limitDs(`${k.word} ${k.cx}`, r.center, LIMIT_STYLE.avg, items.length)]),
+      ...(r.unpl === null ? [] : [
         limitDs('UNPL', r.unpl, LIMIT_STYLE.unpl, items.length),
-        limitDs(r.lnplRaw < 0 ? 'LNPL (none, shown at 0)' : 'LNPL', r.lnpl, LIMIT_STYLE.lnpl, items.length)])
+        limitDs(r.lnpl < 0 ? 'LNPL (none, shown at 0)' : 'LNPL', Math.max(0, r.lnpl), LIMIT_STYLE.lnpl, items.length)])
     ] },
     options: common('Lead time (days)', c => `${items[c.dataIndex].size}: ${c.raw} days`)
   });
@@ -548,9 +623,9 @@ function drawPbc(used) {
     type: 'line',
     data: { labels, datasets: [
       { label: 'data', data: r.mr, borderColor: 'rgba(200,200,200,.45)', borderWidth: 1.5, spanGaps: false,
-        pointBackgroundColor: 'rgba(200,200,200,.85)', pointBorderColor: ring(r.signals.mr), pointBorderWidth: ringW(r.signals.mr), pointRadius: 5, pointHoverRadius: 8 },
-      ...(r.mrBar === null ? [] : [
-        limitDs('Average mR̄', r.mrBar, LIMIT_STYLE.mrAvg, items.length),
+        pointBackgroundColor: 'rgba(200,200,200,.85)', pointBorderColor: ring(signals.mr), pointBorderWidth: ringW(signals.mr), pointRadius: 5, pointHoverRadius: 8 },
+      ...(r.mrCenter === null ? [] : [
+        limitDs(`${k.word} ${k.cmr}`, r.mrCenter, LIMIT_STYLE.mrAvg, items.length),
         limitDs('URL', r.url, LIMIT_STYLE.url, items.length)])
     ] },
     options: common('Moving range (days)', c => `mR: ${c.raw} days`)
@@ -559,15 +634,43 @@ function drawPbc(used) {
 
 // ---------- Delivery rate (throughput) XmR ----------
 const TP_FILE = 'Throughput Daily.xlsx';
-const D2 = 1.128;
+const TP_STORE = 'leadTimeDashboard.throughput.v1';
+const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const TP_RULES = [
   { id: 1, color: '#ff1744', name: '1. Outside limits', desc: 'A point above UNPL or below LNPL: an exceptional value worth investigating.' },
   { id: 2, color: '#ff9100', name: '2. 2 of 3 beyond 2σ', desc: '2 of 3 successive points beyond the same 2σ border: a moderate shift.' },
   { id: 3, color: '#ffea00', name: '3. 4 of 5 beyond 1σ', desc: '4 of 5 successive points beyond the same 1σ border: a sustained small shift.' },
-  { id: 4, color: '#d500f9', name: '4. Run of 8', desc: '8 or more successive points on the same side of the average: the process level has changed.' },
+  { id: 4, color: '#d500f9', name: '4. Run of 8', desc: '8 or more successive points on the same side of the central line: the process level has changed.' },
   { id: 5, color: '#00e5ff', name: 'mR above URL', desc: 'A moving range above URL: an unusually large jump between two successive values.' }
 ];
-let tpDaily = [], tpUserRange = false, tpXChart, tpMrChart;
+let tpFile = [], tpUserRange = false, tpXChart, tpMrChart;
+let tpState = { added: [], removed: [] }; // added: [{ date: 'YYYY-MM-DD', value }], removed: ['YYYY-MM-DD']
+const isWorkday = d => d.getDay() > 0 && d.getDay() < 6;
+
+function tpLoadState() {
+  try { const t = JSON.parse(localStorage.getItem(TP_STORE) || 'null'); if (t && Array.isArray(t.added) && Array.isArray(t.removed)) tpState = t; } catch (e) { /* ignore */ }
+}
+function tpSave() { try { localStorage.setItem(TP_STORE, JSON.stringify(tpState)); } catch (e) { /* ignore */ } }
+// File days merged with manual/uploaded days (later entries win for the same date)
+function tpAllDays() {
+  const byDay = new Map(tpFile.map(d => [iso(d.date), { ...d, source: 'File' }]));
+  for (const a of tpState.added) byDay.set(a.date, { date: parseDate(a.date), value: a.value, source: byDay.has(a.date) ? 'Edited' : 'Added' });
+  const removed = new Set(tpState.removed);
+  return [...byDay.entries()].map(([k, d]) => ({ ...d, key: k, removed: removed.has(k) })).sort((a, b) => a.date - b.date);
+}
+function tpUpsert(list) {
+  for (const { date, value } of list) {
+    const k = iso(date);
+    tpState.added = tpState.added.filter(a => a.date !== k);
+    tpState.added.push({ date: k, value });
+    tpState.removed = tpState.removed.filter(r => r !== k);
+  }
+  tpSave();
+}
+function tpToggle(key) {
+  tpState.removed = tpState.removed.includes(key) ? tpState.removed.filter(r => r !== key) : [...tpState.removed, key];
+  tpSave(); drawTp();
+}
 
 function parseThroughput(buf) {
   const wb = XLSX.read(buf, { cellDates: true });
@@ -581,83 +684,73 @@ function parseThroughput(buf) {
   return out.sort((a, b) => a.date - b.date);
 }
 
-// Wheeler's four detection rules on the X chart plus URL on the mR chart
-function xmrSignals(values) {
-  const n = values.length;
-  const mr = values.map((v, i) => i ? Math.abs(v - values[i - 1]) : null);
-  const mrs = mr.slice(1);
-  const res = { n, mr, mean: null, mrBar: null, sigma: null, hits: values.map(() => new Set()), mrHits: new Set() };
-  if (n < 2) { if (n) res.mean = values[0]; return res; }
-  const mean = values.reduce((a, b) => a + b, 0) / n;
-  const mrBar = mrs.reduce((a, b) => a + b, 0) / mrs.length;
-  const sigma = mrBar / D2;
-  Object.assign(res, { mean, mrBar, sigma, unpl: mean + XMR.E2 * mrBar, lnpl: mean - XMR.E2 * mrBar, url: XMR.D4 * mrBar });
-  if (mrBar === 0) return res;
-  const z = values.map(v => (v - mean) / sigma);
-  values.forEach((v, i) => { if (v > res.unpl || v < res.lnpl) res.hits[i].add(1); });
-  const scan = (len, need, test) => {
-    for (let i = 0; i + len <= n; i++) for (const side of [1, -1]) {
-      const idx = []; for (let k = i; k < i + len; k++) if (test(z[k] * side)) idx.push(k);
-      if (idx.length >= need) idx.forEach(k => res.hits[k].add(len === 3 ? 2 : 3));
-    }
-  };
-  scan(3, 2, v => v > 2);
-  scan(5, 4, v => v > 1);
-  let start = 0;
-  for (let i = 1; i <= n; i++) {
-    if (i === n || Math.sign(z[i]) === 0 || Math.sign(z[i]) !== Math.sign(z[start])) {
-      if (Math.sign(z[start]) !== 0 && i - start >= 8) for (let k = start; k < i; k++) res.hits[k].add(4);
-      start = i;
-    }
-  }
-  mr.forEach((v, i) => { if (v !== null && v > res.url) res.mrHits.add(i); });
-  return res;
-}
-
 function mondayOf(d) { const m = new Date(d.getFullYear(), d.getMonth(), d.getDate()); m.setDate(m.getDate() - ((m.getDay() + 6) % 7)); return m; }
 
 function tpSeries() {
-  if (!tpDaily.length) return { points: [], from: null, to: null };
-  if (!tpUserRange) { $('tpFrom').value = iso(tpDaily[0].date); $('tpTo').value = iso(tpDaily[tpDaily.length - 1].date); }
-  let from = parseDate($('tpFrom').value) || tpDaily[0].date, to = parseDate($('tpTo').value) || tpDaily[tpDaily.length - 1].date;
+  const workOnly = $('tpWorkdays').checked;
+  const all = tpAllDays().filter(d => !workOnly || isWorkday(d.date));
+  const active = all.filter(d => !d.removed);
+  const base = active.length ? active : all;
+  if (!base.length) return { points: [], all, days: [] };
+  if (!tpUserRange) { $('tpFrom').value = iso(base[0].date); $('tpTo').value = iso(base[base.length - 1].date); }
+  let from = parseDate($('tpFrom').value) || base[0].date, to = parseDate($('tpTo').value) || base[base.length - 1].date;
   if (from > to) [from, to] = [to, from];
-  const days = tpDaily.filter(d => d.date >= from && d.date <= to);
+  const inRange = d => d.date >= from && d.date <= to;
+  const days = active.filter(inRange);
+  const removedInRange = all.filter(d => d.removed && inRange(d)).length;
+  const common = { from, to, all, days, removedInRange, workOnly };
   if (document.querySelector('input[name=tpGroup]:checked').value === 'day')
-    return { points: days.map(d => ({ label: fmtDate(d.date), value: d.value })), from, to, unit: 'day', days };
-  const weeks = new Map();
+    return { ...common, unit: 'day', points: days.map(d => ({ label: `${WEEKDAY[d.date.getDay()]} ${fmtDate(d.date)}`, value: d.value, key: d.key })) };
+  const full = workOnly ? 5 : 7, weeks = new Map();
   for (const d of days) {
     const k = +mondayOf(d.date);
     if (!weeks.has(k)) weeks.set(k, { start: new Date(k), value: 0, days: 0 });
     const w = weeks.get(k); w.value += d.value; w.days++;
   }
-  return { points: [...weeks.values()].map(w => ({ label: `wk ${fmtDate(w.start)}${w.days < 7 ? ` (${w.days} d)` : ''}`, value: w.value, partial: w.days < 7 })), from, to, unit: 'week', days };
+  return { ...common, unit: 'week', points: [...weeks.values()].map(w => ({ label: `wk ${fmtDate(w.start)}${w.days < full ? ` (${w.days} d)` : ''}`, value: w.value, partial: w.days < full })) };
+}
+
+function renderTpTable(all) {
+  $('tpDataCount').textContent = `(${all.length})`;
+  $('tpDataTable').innerHTML = all.map(d => `<tr class="${d.removed ? 'removed' : ''}"><td>${fmtDate(d.date)}</td><td>${WEEKDAY[d.date.getDay()]}</td><td>${d.value}</td><td>${d.source}</td>
+    <td><button type="button" data-key="${d.key}" class="${d.removed ? '' : 'danger'}">${d.removed ? 'Restore' : 'Remove'}</button></td></tr>`).join('');
+  $('tpRestoreAll').disabled = !tpState.removed.length;
 }
 
 function drawTp() {
-  const { points, from, to, unit, days } = tpSeries();
+  const { points, from, to, unit, days, all, removedInRange, workOnly } = tpSeries();
+  renderTpTable(tpAllDays());
   document.querySelectorAll('.tpUnit').forEach(e => { e.textContent = unit || 'day'; });
-  if (!points.length) { $('tpStats').innerHTML = ''; $('tpRules').innerHTML = ''; return; }
+  if (!points.length) {
+    $('tpStats').innerHTML = ''; $('tpRules').innerHTML = ''; $('tpSignalDates').textContent = '';
+    if (tpXChart) { tpXChart.destroy(); tpXChart = null; } if (tpMrChart) { tpMrChart.destroy(); tpMrChart = null; }
+    if (tpFile.length || all.length) $('tpStatus').textContent = 'No data points in the selected timeframe.';
+    return;
+  }
   const values = points.map(p => p.value);
-  const r = xmrSignals(values);
+  const r = xmrCalc(values, xmrMode), k = r.k;
   const total = values.reduce((a, b) => a + b, 0);
   const partial = points.filter(p => p.partial).length;
   $('tpStatus').classList.remove('error');
-  $('tpStatus').textContent = `${days.length} days (${fmtDate(from)} – ${fmtDate(to)}), ${total} items delivered, ${points.length} ${unit === 'week' ? 'weeks' : 'points'} on the chart.`
-    + (partial ? ` ${partial} partial week(s) at the edges have fewer than 7 days and read low.` : '');
+  $('tpStatus').textContent = `${days.length} ${workOnly ? 'workdays' : 'days'} (${fmtDate(from)} – ${fmtDate(to)}), ${total} items delivered, ${points.length} ${unit === 'week' ? 'weeks' : 'points'} on the chart.`
+    + (removedInRange ? ` ${removedInRange} day(s) removed.` : '')
+    + (partial ? ` ${partial} partial week(s) have fewer than ${workOnly ? 5 : 7} days and read low.` : '');
 
   const f = v => v === null || v === undefined ? '&ndash;' : round1(v);
   const below0 = v => v < 0 ? ` <span class="muted">(below 0, not drawn)</span>` : '';
-  const rows = r.sigma === null ? [['Average X&#772;', f(r.mean), '&Sigma;X / n']] : [
-    ['UNPL (+3&sigma;)', f(r.unpl), 'X&#772; + 2.66&middot;mR&#772;'],
-    ['+2&sigma; border', f(r.mean + 2 * r.sigma), 'X&#772; + 2&sigma;'],
-    ['+1&sigma; border', f(r.mean + r.sigma), 'X&#772; + &sigma;'],
-    ['Average X&#772;', f(r.mean), '&Sigma;X / n'],
-    ['&minus;1&sigma; border', f(r.mean - r.sigma) + below0(r.mean - r.sigma), 'X&#772; &minus; &sigma;'],
-    ['&minus;2&sigma; border', f(r.mean - 2 * r.sigma) + below0(r.mean - 2 * r.sigma), 'X&#772; &minus; 2&sigma;'],
-    ['LNPL (&minus;3&sigma;)', f(r.lnpl) + below0(r.lnpl), 'X&#772; &minus; 2.66&middot;mR&#772;'],
-    ['Average moving range mR&#772;', f(r.mrBar), '&Sigma;|X<sub>i</sub> &minus; X<sub>i&minus;1</sub>| / (n &minus; 1)'],
-    ['URL', f(r.url), '3.268&middot;mR&#772;'],
-    ['&sigma; (sigma)', f(r.sigma), 'mR&#772; / 1.128']];
+  const c = r.center, med = xmrMode === 'median';
+  const cRow = [`${k.word} ${k.cx} (central line)`, f(c), med ? 'median of X' : '&Sigma;X / n'];
+  const rows = r.sigma === null ? [cRow] : [
+    ['UNPL (+3&sigma;)', f(r.unpl), `${k.cx} + ${k.lim}&middot;${k.cmr}`],
+    ['+2&sigma; border', f(c + 2 * r.sigma), `${k.cx} + 2&sigma;`],
+    ['+1&sigma; border', f(c + r.sigma), `${k.cx} + &sigma;`],
+    cRow,
+    ['&minus;1&sigma; border', f(c - r.sigma) + below0(c - r.sigma), `${k.cx} &minus; &sigma;`],
+    ['&minus;2&sigma; border', f(c - 2 * r.sigma) + below0(c - 2 * r.sigma), `${k.cx} &minus; 2&sigma;`],
+    ['LNPL (&minus;3&sigma;)', f(r.lnpl) + below0(r.lnpl), `${k.cx} &minus; ${k.lim}&middot;${k.cmr}`],
+    [`${k.word} moving range ${k.cmr}`, f(r.mrCenter), med ? 'median of |X<sub>i</sub> &minus; X<sub>i&minus;1</sub>|' : '&Sigma;|X<sub>i</sub> &minus; X<sub>i&minus;1</sub>| / (n &minus; 1)'],
+    ['URL', f(r.url), `${k.url}&middot;${k.cmr}`],
+    ['&sigma; (sigma)', f(r.sigma), `${k.cmr} / ${k.d2}`]];
   $('tpStats').innerHTML = rows.map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td class="muted">${c}</td></tr>`).join('');
 
   const ruleIdx = id => id === 5 ? [...r.mrHits] : r.hits.map((h, i) => h.has(id) ? i : -1).filter(i => i >= 0);
@@ -667,6 +760,7 @@ function drawTp() {
   }).join('');
   const listed = TP_RULES.map(rule => { const idx = ruleIdx(rule.id); return idx.length ? `<strong>${rule.name}:</strong> ${idx.map(i => points[i].label).join(', ')}` : null; }).filter(Boolean);
   $('tpSignalDates').innerHTML = r.n < 2 ? 'At least 2 points are needed to calculate limits.'
+    : r.mrCenter === 0 ? `The ${k.word.toLowerCase()} moving range is 0, so limits can't be calculated. Try averages or the weekly view.`
     : listed.length ? listed.join('<br>') : 'No signals: the delivery rate looks predictable within these limits.';
 
   if (typeof Chart === 'undefined') return;
@@ -676,20 +770,27 @@ function drawTp() {
     type: 'line', label: `${label}: ${round1(v)}`, data: Array(nPts).fill(round1(v)), borderColor: color, backgroundColor: color,
     borderDash: dash, borderWidth: width, pointRadius: 0, pointHoverRadius: 0, isLimit: true });
   const ruleColor = h => { const t = TP_RULES.find(rule => h.has(rule.id)); return t ? t.color : 'rgba(220,220,220,.9)'; };
+  const clickable = unit === 'day';
   const opts = (yTitle, label) => ({
     responsive: true, maintainAspectRatio: false, animation: false,
     scales: { x: { ticks: { maxRotation: 60, autoSkip: true, maxTicksLimit: 24 } }, y: { beginAtZero: true, title: { display: true, text: yTitle } } },
-    plugins: { legend: { position: 'bottom', labels: { filter: l => l.text !== 'data' } }, tooltip: { filter: c => !c.dataset.isLimit, callbacks: { label } } }
+    plugins: { legend: { position: 'bottom', labels: { filter: l => l.text !== 'data' } },
+               tooltip: { filter: t => !t.dataset.isLimit, callbacks: { label, footer: () => clickable ? 'Click to remove' : '' } } },
+    onClick: (e, els, ch) => {
+      if (!clickable) return;
+      const el = els.find(el => !ch.data.datasets[el.datasetIndex].isLimit);
+      if (el && points[el.index]) tpToggle(points[el.index].key);
+    }
   });
   const ruleNames = set => [...set].sort().map(id => TP_RULES.find(rule => rule.id === id).name).join('; ');
 
-  const xSets = r.sigma === null ? [] : [
+  const xSets = r.sigma === null ? [line(`${k.word} ${k.cx}`, c, '#e6e6e6', [])].filter(Boolean) : [
     line('UNPL', r.unpl, '#ef5350', [8, 4]),
-    line('+2σ', r.mean + 2 * r.sigma, '#ffb74d', [4, 4], 1.5),
-    line('+1σ', r.mean + r.sigma, '#fff176', [2, 4], 1.5),
-    line('Average X̄', r.mean, '#e6e6e6', []),
-    line('−1σ', r.mean - r.sigma, '#fff176', [2, 4], 1.5),
-    line('−2σ', r.mean - 2 * r.sigma, '#ffb74d', [4, 4], 1.5),
+    line('+2σ', c + 2 * r.sigma, '#ffb74d', [4, 4], 1.5),
+    line('+1σ', c + r.sigma, '#fff176', [2, 4], 1.5),
+    line(`${k.word} ${k.cx}`, c, '#e6e6e6', []),
+    line('−1σ', c - r.sigma, '#fff176', [2, 4], 1.5),
+    line('−2σ', c - 2 * r.sigma, '#ffb74d', [4, 4], 1.5),
     line('LNPL', r.lnpl, '#ef5350', [8, 4])].filter(Boolean);
   if (tpXChart) tpXChart.destroy();
   tpXChart = new Chart($('tpXChart'), { type: 'line', data: { labels, datasets: [
@@ -703,7 +804,7 @@ function drawTp() {
     { label: 'data', data: r.mr, borderColor: 'rgba(200,200,200,.45)', borderWidth: 1.5,
       pointBackgroundColor: r.mr.map((_, i) => r.mrHits.has(i) ? TP_RULES[4].color : 'rgba(220,220,220,.9)'), pointBorderColor: '#111',
       pointRadius: r.mr.map((_, i) => r.mrHits.has(i) ? 6 : 4), pointHoverRadius: 8 },
-    ...(r.mrBar === null ? [] : [line('Average mR̄', r.mrBar, '#e6e6e6', []), line('URL', r.url, '#ef5350', [8, 4])])] },
+    ...(r.mrCenter === null ? [] : [line(`${k.word} ${k.cmr}`, r.mrCenter, '#e6e6e6', []), line('URL', r.url, '#ef5350', [8, 4])].filter(Boolean))] },
     options: opts('Moving range', c => `mR: ${c.raw}${r.mrHits.has(c.dataIndex) ? ' – above URL' : ''}`) });
 }
 
@@ -711,10 +812,12 @@ async function loadThroughput() {
   try {
     const resp = await fetch(encodeURI(TP_FILE));
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    tpDaily = parseThroughput(await resp.arrayBuffer());
-    if (!tpDaily.length) throw new Error('no valid rows (expected date, number)');
+    tpFile = parseThroughput(await resp.arrayBuffer());
+    if (!tpFile.length) throw new Error('no valid rows (expected date, number)');
   } catch (e) {
-    $('tpStatus').textContent = `Could not load "${TP_FILE}": ${e.message}`;
+    tpFile = [];
+    drawTp();
+    $('tpStatus').textContent = `Could not load "${TP_FILE}": ${e.message}. You can still add or upload data.`;
     $('tpStatus').classList.add('error');
     return;
   }
@@ -738,6 +841,37 @@ function bind() {
   ['tpFrom', 'tpTo'].forEach(id => $(id).addEventListener('change', () => { tpUserRange = true; drawTp(); }));
   $('tpFull').addEventListener('click', () => { tpUserRange = false; drawTp(); });
   document.querySelectorAll('input[name=tpGroup]').forEach(r => r.addEventListener('change', drawTp));
+  $('tpWorkdays').addEventListener('change', drawTp);
+  document.querySelectorAll('input[name=pbcMode], input[name=tpMode]').forEach(r => r.addEventListener('change', () => { setXmrMode(r.value); render(); drawTp(); }));
+  $('tpDataTable').addEventListener('click', e => { const key = e.target.dataset?.key; if (key) tpToggle(key); });
+  $('tpRestoreAll').addEventListener('click', () => { tpState.removed = []; tpSave(); drawTp(); });
+  $('tpReset').addEventListener('click', () => {
+    if (!confirm('Discard all added, edited and removed delivery-rate days?')) return;
+    tpState = { added: [], removed: [] }; tpSave(); tpUserRange = false; drawTp();
+  });
+  $('tpAddForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const date = parseDate($('tpNewDate').value), value = parseLead($('tpNewValue').value), st = $('tpAddStatus');
+    st.classList.remove('error');
+    if (!date || value === null) { st.textContent = 'Enter a valid date and number of items.'; st.classList.add('error'); return; }
+    const existed = tpAllDays().some(d => d.key === iso(date));
+    tpUpsert([{ date, value }]); drawTp();
+    st.textContent = `${existed ? 'Updated' : 'Added'} ${WEEKDAY[date.getDay()]} ${fmtDate(date)}: ${value} items.`
+      + (!isWorkday(date) && $('tpWorkdays').checked ? ' This is a weekend day, so it is hidden while "Workdays only" is on.' : '');
+    $('tpNewValue').value = '';
+  });
+  $('tpUploadBtn').addEventListener('click', async () => {
+    const f = $('tpFileInput').files[0], st = $('tpUploadStatus');
+    st.classList.remove('error');
+    if (!f) { st.textContent = 'Choose a file first.'; st.classList.add('error'); return; }
+    try {
+      const list = parseThroughput(await f.arrayBuffer());
+      if (!list.length) throw new Error('no valid rows (expected date, number)');
+      tpUpsert(list); drawTp();
+      st.textContent = `Added or updated ${list.length} days from "${f.name}".`;
+      $('tpFileInput').value = '';
+    } catch (err) { st.textContent = `Could not read "${f.name}": ${err.message}`; st.classList.add('error'); }
+  });
   document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
   document.querySelectorAll('.size').forEach(cb => cb.addEventListener('change', render));
   ['from', 'to'].forEach(id => $(id).addEventListener('change', () => { userRange = true; render(); }));
@@ -798,7 +932,9 @@ async function init() {
     Chart.defaults.borderColor = 'rgba(255,255,255,.12)';
   }
   const restored = load();
+  tpLoadState();
   bind();
+  setXmrMode(xmrMode);
   const startTab = location.hash.slice(1);
   if (['pbc', 'tp'].includes(startTab)) {
     document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === startTab)));
